@@ -1,27 +1,62 @@
-# CamTrak
+# 🎥 CamTrak 2.8 | Ultra-Precision Gestural Interface
 
-CamTrak is a Python-based computer vision application that allows you to control your computer's mouse cursor and perform clicks using hand gestures via a webcam. Built with MediaPipe and OpenCV, it features a high-precision, lag-free engine for a smooth user experience.
+CamTrak is a high-performance, scale-invariant virtual mouse system that transforms your webcam into a precision spatial controller. Leveraging MediaPipe's cutting-edge neural networks and custom signal filtering, CamTrak provides a seamless, touchless computing experience.
 
-## Features
+---
 
-* **Mouse Movement:** Control the cursor by moving your Index finger.
-* **Left Click:** Perform a left click by pinching your Thumb and Index finger together.
-* **Right Click:** Perform a right click by double-pinching your Thumb and Ring finger.
-* **Distance-Invariant Tracking:** Uses ratio-based thresholds (pinch distance relative to palm size) so gestures work perfectly at any distance from the camera.
-* **Ultra-Precision Smoothing:** Implements a 1 Euro Filter to eliminate stationary jitter and provide highly responsive motion.
-* **Lag-Free Video:** Uses a threaded camera stream to process frames in the background, preventing input lag.
-* **Heads-Up Display (HUD):** Real-time visual feedback of your tracking status and active gestures.
+## ✨ Key Features
 
-## Prerequisites
+- **🎯 Ultra-Precision Engine**: Uses the **1 Euro Filter** algorithm to eliminate jitter while maintaining high-speed responsiveness.
+- **📏 Scale-Invariant Logic**: Gesture recognition is based on hand-to-palm ratios, ensuring perfect performance whether you are close to or far from the camera.
+- **🖐️ Intuitive Gesture Set**:
+  - **Cursor Movement**: Track your index finger with smooth, adaptive acceleration.
+  - **Left Click & Drag**: Pinch your thumb and index finger.
+  - **Right Click**: Double pinch with your thumb and ring finger.
+  - **Smart Scroll**: Open your palm and move vertically to scroll through documents or web pages.
+- **🖥️ Heads-Up Display (HUD)**: Real-time visual feedback with a minimalist, semi-transparent interface.
 
-Ensure you have Python 3.x installed. The following libraries are required:
+---
 
-* `opencv-python`
-* `mediapipe`
-* `pyautogui`
-* `numpy`
+## 🚀 Getting Started
 
-You can install the dependencies using pip:
+### Prerequisites
+- Python 3.8+
+- A working webcam
 
+### Installation
+
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/KingshukChatterjee007/CamTrak.git
+   cd CamTrak
+   ```
+
+2. **Install dependencies**:
+   ```bash
+   pip install opencv-python mediapipe pyautogui numpy
+   ```
+
+3. **Download the Task Model**:
+   Ensure `hand_landmarker.task` is in the root directory.
+
+### Running CamTrak
 ```bash
-pip install opencv-python mediapipe pyautogui numpy
+python camtrak.py
+```
+
+---
+
+## 🛠️ Technology Stack
+
+- **MediaPipe**: Hand landmark detection and tracking.
+- **PyAutoGUI**: System-level mouse and keyboard control.
+- **OpenCV**: Image processing and HUD rendering.
+- **One Euro Filter**: Advanced signal smoothing for surgical precision.
+
+---
+
+## 📜 License
+This project is for educational and experimental purposes. See the license file for details.
+
+---
+*Developed by [Kingshuk Chatterjee](https://github.com/KingshukChatterjee007)*

@@ -6,7 +6,7 @@ import pyautogui
 import numpy as np
 import time
 import os
-from utils import HandSmoothing, calculate_distance
+from utils import HandSmoothing, calculate_distance, get_palm_center
 from video_stream import ThreadedCamera
 
 # --- Configurations ---
@@ -21,12 +21,16 @@ PINCH_RATIO_START = 0.35
 PINCH_RATIO_RELEASE = 0.55
 CLICK_COOLDOWN = 0.25
 DOUBLE_PINCH_WINDOW = 0.6
+SCROLL_SENSITIVITY = 3        # Scroll clicks per movement unit
+SCROLL_DEADZONE = 8           # Pixel deadzone to ignore jitter
+PALM_OPEN_FINGER_COUNT = 5    # All fingers extended = open palm
 MODEL_PATH = 'hand_landmarker.task'
 pyautogui.FAILSAFE = True
 
 # Colors
 COLOR_GLOW = (255, 255, 0)
 COLOR_TEXT = (0, 255, 255)
+COLOR_SCROLL = (255, 165, 0)
 
 # High-Precision Engine Tuning
 # min_cutoff: stationary jitter elimination
@@ -74,14 +78,17 @@ def run_camtrak():
     cv2.setWindowProperty("CamTrak HUD", cv2.WND_PROP_TOPMOST, 1)
     cv2.resizeWindow("CamTrak HUD", 350, 260)
 
-    print("CamTrak 2.7 Ultra-Precision Engine Started.")
+    print("CamTrak 2.8 Ultra-Precision Engine Started.")
     
     last_left_click_time = 0
     last_ring_pinch_time = 0
     is_left_clicking = False
+    prev_palm_y = None          # Previous palm center Y for scroll delta
+    is_palm_scrolling = False   # True when open palm is detected
     start_time = time.time()
 
     while True:
+      try:
         success, raw_img = camera.read()
         if not success or raw_img is None: 
             time.sleep(0.01)
@@ -111,61 +118,96 @@ def run_camtrak():
             palm_size = calculate_distance(lms[0], lms[5])
             if palm_size < 0.01: palm_size = 0.01
 
-            # A. Cursor (Index Only)
-            index_tip = (int(lms[8].x * lw), int(lms[8].y * lh))
-            s_x, s_y = smoother.smooth(8, index_tip)
-            
-            # Mapping with overshoot logic
-            x_mapped = np.interp(s_x, (FRAME_REDUCTION, lw - FRAME_REDUCTION), (0, SCREEN_WIDTH))
-            y_mapped = np.interp(s_y, (FRAME_REDUCTION, lh - FRAME_REDUCTION), (0, SCREEN_HEIGHT))
-            x_mapped = np.clip(x_mapped, 0, SCREEN_WIDTH - 1)
-            y_mapped = np.clip(y_mapped, 0, SCREEN_HEIGHT - 1)
-            
-            pyautogui.moveTo(x_mapped, y_mapped, _pause=False)
-            mode_text = "ACTIVE"
-
+            # Finger count for mode detection
+            fingers_up = count_fingers(lms)
             current_time = time.time()
 
-            # B. Left Click (Thumb + Index Ratio)
-            dist_index = calculate_distance(lms[4], lms[8])
-            ratio_index = dist_index / palm_size
-            
-            if not is_left_clicking:
-                if ratio_index < PINCH_RATIO_START and (current_time - last_left_click_time) > CLICK_COOLDOWN:
-                    pyautogui.mouseDown()
-                    is_left_clicking = True
-                    last_left_click_time = current_time
-                    status_text = "LEFT PINCH"
-            else:
-                if ratio_index > PINCH_RATIO_RELEASE:
-                    pyautogui.mouseUp()
-                    is_left_clicking = False
+            # --- PALM SCROLL MODE (Open Palm = 5 Fingers) ---
+            if fingers_up >= PALM_OPEN_FINGER_COUNT:
+                is_palm_scrolling = True
+                mode_text = "SCROLL"
+                palm_cx, palm_cy = get_palm_center(lms, lw, lh)
 
-            # C. Right Click (Thumb + Ring Double Pinch)
-            dist_ring = calculate_distance(lms[4], lms[16])
-            ratio_ring = dist_ring / palm_size
-            
-            if ratio_ring < PINCH_RATIO_START:
-                if (current_time - last_ring_pinch_time) < DOUBLE_PINCH_WINDOW and (current_time - last_ring_pinch_time) > 0.05:
-                    pyautogui.rightClick()
-                    status_text = "RIGHT DOUBLE"
-                    last_ring_pinch_time = 0
-                else:
-                    last_ring_pinch_time = current_time
-
-            # Visualization
-            draw_landmarks_manual(img, lms)
-            cv2.circle(img, (int(s_x), int(s_y)), 6, COLOR_GLOW, -1)
+                if prev_palm_y is not None:
+                    delta_y = palm_cy - prev_palm_y
+                    if abs(delta_y) > SCROLL_DEADZONE:
+                        scroll_amount = int(-delta_y / abs(delta_y)) * SCROLL_SENSITIVITY
+                        pyautogui.scroll(scroll_amount, _pause=False)
+                        status_text = f"SCROLL {'UP' if scroll_amount > 0 else 'DOWN'}"
                 
+                prev_palm_y = palm_cy
+
+                # Visualization: palm center glow
+                cv2.circle(img, (palm_cx, palm_cy), 10, COLOR_SCROLL, -1)
+                cv2.circle(img, (palm_cx, palm_cy), 16, COLOR_SCROLL, 2)
+
+            # --- POINTER MODE (Normal tracking + gestures) ---
+            else:
+                is_palm_scrolling = False
+                prev_palm_y = None
+
+                # A. Cursor (Index Only)
+                index_tip = (int(lms[8].x * lw), int(lms[8].y * lh))
+                s_x, s_y = smoother.smooth(8, index_tip)
+                
+                # Mapping with overshoot logic
+                x_mapped = np.interp(s_x, (FRAME_REDUCTION, lw - FRAME_REDUCTION), (0, SCREEN_WIDTH))
+                y_mapped = np.interp(s_y, (FRAME_REDUCTION, lh - FRAME_REDUCTION), (0, SCREEN_HEIGHT))
+                x_mapped = np.clip(x_mapped, 0, SCREEN_WIDTH - 1)
+                y_mapped = np.clip(y_mapped, 0, SCREEN_HEIGHT - 1)
+                
+                pyautogui.moveTo(x_mapped, y_mapped, _pause=False)
+                mode_text = "ACTIVE"
+
+                # B. Left Click (Thumb + Index Ratio)
+                dist_index = calculate_distance(lms[4], lms[8])
+                ratio_index = dist_index / palm_size
+                
+                if not is_left_clicking:
+                    if ratio_index < PINCH_RATIO_START and (current_time - last_left_click_time) > CLICK_COOLDOWN:
+                        pyautogui.mouseDown()
+                        is_left_clicking = True
+                        last_left_click_time = current_time
+                        status_text = "LEFT PINCH"
+                else:
+                    if ratio_index > PINCH_RATIO_RELEASE:
+                        pyautogui.mouseUp()
+                        is_left_clicking = False
+
+                # C. Right Click (Thumb + Ring Double Pinch)
+                dist_ring = calculate_distance(lms[4], lms[16])
+                ratio_ring = dist_ring / palm_size
+                
+                if ratio_ring < PINCH_RATIO_START:
+                    if (current_time - last_ring_pinch_time) < DOUBLE_PINCH_WINDOW and (current_time - last_ring_pinch_time) > 0.05:
+                        pyautogui.rightClick()
+                        status_text = "RIGHT DOUBLE"
+                        last_ring_pinch_time = 0
+                    else:
+                        last_ring_pinch_time = current_time
+
+                # Visualization
+                cv2.circle(img, (int(s_x), int(s_y)), 6, COLOR_GLOW, -1)
+
+            draw_landmarks_manual(img, lms)
+                
+        else:
+            prev_palm_y = None
+            is_palm_scrolling = False
+
         # HUD
         overlay = img.copy()
         cv2.rectangle(overlay, (0, 0), (lw, 60), (0, 0, 0), -1)
         cv2.addWeighted(overlay, 0.4, img, 0.6, 0, img)
-        cv2.putText(img, f"CAMTRAK 2.7 | {mode_text}", (15, 25), cv2.FONT_HERSHEY_PLAIN, 1, COLOR_TEXT, 1)
+        hud_color = COLOR_SCROLL if mode_text == "SCROLL" else COLOR_TEXT
+        cv2.putText(img, f"CAMTRAK 2.8 | {mode_text}", (15, 25), cv2.FONT_HERSHEY_PLAIN, 1, hud_color, 1)
         cv2.putText(img, status_text, (15, 50), cv2.FONT_HERSHEY_PLAIN, 1.2, (255, 255, 255), 2)
 
         cv2.imshow("CamTrak HUD", img)
         if cv2.waitKey(1) & 0xFF == ord('q'): break
+
+      except pyautogui.FailSafeException:
+          continue
 
     camera.stop()
     cv2.destroyAllWindows()
